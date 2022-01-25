@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 import telegram
 from dotenv import load_dotenv
+from requests.exceptions import RequestException
 
 load_dotenv()
 
@@ -13,7 +14,7 @@ PRACTICUM_TOKEN = os.getenv('practicum')
 TELEGRAM_TOKEN = os.getenv('telegram_token')
 TELEGRAM_CHAT_ID = os.getenv('telegram_chat_id')
 
-RETRY_TIME = 60
+RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
@@ -45,15 +46,24 @@ def send_message(bot, message):
 
 def get_api_answer(current_timestamp):
     """Отправка запроса к API сервиса Домашка."""
-    headers = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
     payload = {'from_date': current_timestamp}
-    response = requests.get(ENDPOINT, headers=headers, params=payload)
+    try:
+        response = requests.get(ENDPOINT, headers=HEADERS, params=payload)
+    except RequestException:
+        message = f'Сбой в работе программы: Эндпоинт {ENDPOINT} недоступен.'
+        logger.error(message)
+        raise Exception(message)
     if response.status_code != 200:
         message = (f'Сбой в работе программы: Эндпоинт {ENDPOINT} недоступен. '
                    f'Код ответа API: {response.status_code}')
         logger.error(message)
         raise Exception(message)
-    return response.json()
+    try:
+        return response.json()
+    except Exception:
+        message = f'В ответе файл не JSON-формата: {response.status_code}'
+        logger.error(message)
+        raise TypeError(message)
 
 
 def check_response(response):
@@ -62,23 +72,36 @@ def check_response(response):
         message = 'Ответ API - не словарь'
         logger.error(message)
         raise TypeError(message)
-    homework = response['homeworks']
-    if len(homework) == 0:
-        message = 'В ответе API нет домашней работы'
+    try:
+        homework = response['homeworks']
+        if len(homework) == 0:
+            message = 'В ответе API нет домашней работы'
+            logger.error(message)
+            raise IndexError(message)
+    except KeyError:
+        message = 'Некорректный файл-ответа'
         logger.error(message)
-        raise IndexError(message)
-    return response.get('homeworks')[0]
+        raise Exception(message)
+    try:
+        homework_dict = response.get('homeworks')[0]
+        keys = ['status', 'homework_name']
+        for key in keys:
+            if key in homework_dict:
+                return homework_dict
+    except Exception:
+        message = 'Некорректный файл-ответа'
+        logger.error(message)
+        raise Exception(message)
 
 
 def parse_status(homework):
     """Проверка на изменение статуса."""
-    keys = ['status', 'homework_name']
-    for key in keys:
-        if key not in homework:
-            message = f'Ключа {key} нет в ответе API'
-            logger.error(message)
-            raise KeyError(message)
-    homework_status = homework['status']
+    try:
+        homework_status = homework['status']
+    except Exception:
+        message = 'Ключа status нет в ответе API'
+        logger.error(message)
+        raise KeyError(message)
     if homework_status not in HOMEWORK_STATUSES:
         message = 'Неизвестный статус домашней работы в ответе API'
         logger.error(message)
@@ -114,13 +137,19 @@ def main():
             message = parse_status(homework)
             send_message(bot, message)
             current_timestamp = response.get('current_date')
-            time.sleep(RETRY_TIME)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
-            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+            try:
+                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+            except Exception:
+                message = 'Ошибка во взаимодействии с Telegram'
+                logger.error(message)
+                raise KeyError(message)
             time.sleep(RETRY_TIME)
         else:
-            pass
+            message = 'Удачная отправка сообщения в Телеграм'
+            logger.info(message)
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
