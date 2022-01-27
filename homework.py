@@ -83,29 +83,18 @@ def check_response(response):
         message = 'Некорректный файл-ответа'
         logger.error(message)
         raise Exception(message)
-    try:
-        homework_dict = response.get('homeworks')[0]
-        keys = ['status', 'homework_name']
-        for key in keys:
-            if key not in homework_dict:
-                message = 'Некорректный файл-ответа'
-                logger.error(message)
-                raise Exception(message)
-        return homework_dict
-    except Exception:
-        message = 'Некорректный файл-ответа'
-        logger.error(message)
-        raise Exception(message)
+    return response.get('homeworks')[0]
 
 
 def parse_status(homework):
     """Проверка на изменение статуса."""
-    try:
-        homework_status = homework['status']
-    except Exception:
-        message = 'Ключа status нет в ответе API'
-        logger.error(message)
-        raise KeyError(message)
+    keys = ['status', 'homework_name']
+    for key in keys:
+        if key not in homework:
+            message = f'Некорректный файл-ответа. Нет ключа {key}.'
+            logger.error(message)
+            raise KeyError(message)
+    homework_status = homework['status']
     if homework_status not in HOMEWORK_STATUSES:
         message = 'Неизвестный статус домашней работы в ответе API'
         logger.error(message)
