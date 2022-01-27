@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from json.decoder import JSONDecodeError
 from logging.handlers import RotatingFileHandler
 
 import requests
@@ -60,7 +61,7 @@ def get_api_answer(current_timestamp):
         raise Exception(message)
     try:
         return response.json()
-    except Exception:
+    except JSONDecodeError:
         message = f'В ответе файл не JSON-формата: {response.status_code}'
         logger.error(message)
         raise TypeError(message)
@@ -86,8 +87,11 @@ def check_response(response):
         homework_dict = response.get('homeworks')[0]
         keys = ['status', 'homework_name']
         for key in keys:
-            if key in homework_dict:
-                return homework_dict
+            if key not in homework_dict:
+                message = 'Некорректный файл-ответа'
+                logger.error(message)
+                raise Exception(message)
+        return homework_dict
     except Exception:
         message = 'Некорректный файл-ответа'
         logger.error(message)
@@ -144,7 +148,6 @@ def main():
             except Exception:
                 message = 'Ошибка во взаимодействии с Telegram'
                 logger.error(message)
-                raise KeyError(message)
             time.sleep(RETRY_TIME)
         else:
             message = 'Удачная отправка сообщения в Телеграм'
